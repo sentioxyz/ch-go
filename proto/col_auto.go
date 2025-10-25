@@ -124,6 +124,8 @@ func (c *ColAuto) Infer(t ColumnType) error {
 				c.Data = new(ColDecimal128)
 			case prec >= 39 && prec < 77:
 				c.Data = new(ColDecimal256)
+			case prec >= 77 && prec < 155:
+				c.Data = new(ColDecimal512)
 			default:
 				return errors.Errorf("decimal precision %d out of range", prec)
 			}
@@ -143,6 +145,10 @@ func (c *ColAuto) Infer(t ColumnType) error {
 			return nil
 		case ColumnTypeDecimal256:
 			c.Data = new(ColDecimal256)
+			c.DataType = t
+			return nil
+		case ColumnTypeDecimal512:
+			c.Data = new(ColDecimal512)
 			c.DataType = t
 			return nil
 		case ColumnTypeEnum8, ColumnTypeEnum16:
