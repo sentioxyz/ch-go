@@ -355,11 +355,16 @@ func run() error {
 			Signed: true,
 			Kind:   KindDecimal,
 		},
-		{ // Decimal256
-			Bits:   256,
-			Signed: true,
-			Kind:   KindDecimal,
-		},
+    	{ // Decimal256
+    		Bits:   256,
+    		Signed: true,
+    		Kind:   KindDecimal,
+    	},
+        { // Decimal512
+            Bits:   512,
+            Signed: true,
+            Kind:   KindDecimal,
+        },
 	}
 	for _, bits := range []int{
 		8,
