@@ -87,28 +87,30 @@ func (c ColumnType) Base() ColumnType {
 // reduces Decimal(P, ...) to Decimal32/Decimal64/Decimal128/Decimal256
 // returns c if any errors occur during conversion
 func (c ColumnType) decimalDowncast() ColumnType {
-	if c.Base() != ColumnTypeDecimal {
-		return c
-	}
-	elem := c.Elem()
-	precStr, _, _ := strings.Cut(string(elem), ",")
-	precStr = strings.TrimSpace(precStr)
-	prec, err := strconv.Atoi(precStr)
-	if err != nil {
-		return c
-	}
-	switch {
-	case prec < 10:
-		return ColumnTypeDecimal32
-	case prec < 19:
-		return ColumnTypeDecimal64
-	case prec < 39:
-		return ColumnTypeDecimal128
-	case prec < 77:
-		return ColumnTypeDecimal256
-	default:
-		return c
-	}
+    if c.Base() != ColumnTypeDecimal {
+        return c
+    }
+    elem := c.Elem()
+    precStr, _, _ := strings.Cut(string(elem), ",")
+    precStr = strings.TrimSpace(precStr)
+    prec, err := strconv.Atoi(precStr)
+    if err != nil {
+        return c
+    }
+    switch {
+    case prec < 10:
+        return ColumnTypeDecimal32
+    case prec < 19:
+        return ColumnTypeDecimal64
+    case prec < 39:
+        return ColumnTypeDecimal128
+    case prec < 77:
+        return ColumnTypeDecimal256
+    case prec < 155:
+        return ColumnTypeDecimal512
+    default:
+        return c
+    }
 }
 
 // Conflicts reports whether two types conflict.
@@ -245,11 +247,12 @@ const (
 	ColumnTypeBool           ColumnType = "Bool"
 	ColumnTypeTuple          ColumnType = "Tuple"
 	ColumnTypeNullable       ColumnType = "Nullable"
-	ColumnTypeDecimal        ColumnType = "Decimal"
-	ColumnTypeDecimal32      ColumnType = "Decimal32"
-	ColumnTypeDecimal64      ColumnType = "Decimal64"
-	ColumnTypeDecimal128     ColumnType = "Decimal128"
-	ColumnTypeDecimal256     ColumnType = "Decimal256"
+    ColumnTypeDecimal        ColumnType = "Decimal"
+    ColumnTypeDecimal32      ColumnType = "Decimal32"
+    ColumnTypeDecimal64      ColumnType = "Decimal64"
+    ColumnTypeDecimal128     ColumnType = "Decimal128"
+    ColumnTypeDecimal256     ColumnType = "Decimal256"
+    ColumnTypeDecimal512     ColumnType = "Decimal512"
 	ColumnTypePoint          ColumnType = "Point"
 	ColumnTypeInterval       ColumnType = "Interval"
 	ColumnTypeNothing        ColumnType = "Nothing"

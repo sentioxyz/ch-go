@@ -11,3 +11,6 @@ type Decimal128 Int128
 
 // Decimal256 represents Decimal256 value.
 type Decimal256 Int256
+
+// Decimal512 represents Decimal512 value.
+type Decimal512 Int512
