@@ -32,7 +32,13 @@ const (
 	FeatureAddendum                    Feature = 54458
 	FeatureParameters                  Feature = 54459
 	FeatureServerQueryTimeInProgress   Feature = 54460
+	FeatureChunkedPackets              Feature = 54470
+	FeatureVersionedParallelReplicas   Feature = 54471
 	FeatureJSONStrings                 Feature = 54475
+	FeatureQueryAndLineNumbers         Feature = 54475
+	FeatureInterserverJWT              Feature = 54476
+	// Push externally granted roles to other nodes.
+	FeatureInterserverExternallyGrantedRoles Feature = 54472
 )
 
 // Version reports protocol version when Feature was introduced.
