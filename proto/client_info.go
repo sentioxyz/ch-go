@@ -13,8 +13,9 @@ type Interface byte
 
 // Possible interfaces.
 const (
-	InterfaceTCP  Interface = 1
-	InterfaceHTTP Interface = 2
+	InterfaceTCP            Interface = 1
+	InterfaceHTTP           Interface = 2
+	InterfaceTCPInterserver Interface = 7
 )
 
 //go:generate go run github.com/dmarkham/enumer -type ClientQueryKind -trimprefix ClientQueryKind -output client_info_query_enum.go
@@ -172,13 +173,8 @@ func (c *ClientInfo) DecodeAware(r *Reader, version int) error {
 			return errors.Wrap(err, "interface")
 		}
 		c.Interface = Interface(v)
-		if !c.Interface.IsAInterface() {
-			return errors.Errorf("unknown interface %d", v)
-		}
-
-		// TODO(ernado): support HTTP
-		if c.Interface != InterfaceTCP {
-			return errors.New("only tcp interface is supported")
+		if c.Interface != InterfaceTCP && c.Interface != InterfaceTCPInterserver {
+			return errors.Errorf("unsupported interface %d", v)
 		}
 	}
 
@@ -312,6 +308,27 @@ func (c *ClientInfo) DecodeAware(r *Reader, version int) error {
 				return errors.Wrap(err, "number of current replica")
 			}
 			c.NumberOfCurrentReplica = v
+		}
+	}
+
+	if FeatureQueryAndLineNumbers.In(version) {
+		if _, err := r.UVarInt(); err != nil {
+			return errors.Wrap(err, "script query number")
+		}
+		if _, err := r.UVarInt(); err != nil {
+			return errors.Wrap(err, "script line number")
+		}
+	}
+
+	if FeatureInterserverJWT.In(version) {
+		hasJWT, err := r.Bool()
+		if err != nil {
+			return errors.Wrap(err, "jwt flag")
+		}
+		if hasJWT {
+			if _, err := r.Str(); err != nil {
+				return errors.Wrap(err, "jwt")
+			}
 		}
 	}
 
