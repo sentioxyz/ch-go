@@ -80,13 +80,28 @@ func (c *Client) sendQuery(ctx context.Context, q Query) error {
 	if c.IsClosed() {
 		return ErrClosed
 	}
+
+	settings := c.querySettings(q)
+	if c.signingKey != nil {
+		token, err := SignQuery(c.signingKey, q.Body, q.QueryID)
+		if err != nil {
+			c.lg.Warn("Failed to sign query", zap.Error(err))
+		} else {
+			settings = append(settings, proto.Setting{
+				Key:       "SQL_x_auth_token",
+				Value:     token,
+				Important: true,
+			})
+		}
+	}
+
 	c.encode(proto.Query{
 		ID:          q.QueryID,
 		Body:        q.Body,
 		Secret:      q.Secret,
 		Stage:       proto.StageComplete,
 		Compression: c.compression,
-		Settings:    c.querySettings(q),
+		Settings:    settings,
 		Parameters:  q.Parameters,
 		Info: proto.ClientInfo{
 			ProtocolVersion: c.protocolVersion,
