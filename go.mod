@@ -6,6 +6,7 @@ require (
 	github.com/cenkalti/backoff/v4 v4.3.0
 	github.com/dmarkham/enumer v1.6.3
 	github.com/dustin/go-humanize v1.0.1
+	github.com/ethereum/go-ethereum v1.16.8
 	github.com/go-faster/city v1.0.1
 	github.com/go-faster/errors v0.7.1
 	github.com/google/uuid v1.6.0
@@ -26,10 +27,11 @@ require (
 )
 
 require (
-	github.com/cespare/xxhash/v2 v2.3.0 // indirect
-	github.com/davecgh/go-spew v1.1.1 // indirect
+        github.com/cespare/xxhash/v2 v2.3.0 // indirect	github.com/davecgh/go-spew v1.1.1 // indirect
+	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.0.1 // indirect
 	github.com/go-logr/logr v1.4.3 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
+	github.com/holiman/uint256 v1.3.2 // indirect
 	github.com/pascaldekloe/name v1.0.1 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect

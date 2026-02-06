@@ -2,6 +2,7 @@ package ch
 
 import (
 	"context"
+	"crypto/ecdsa"
 	"crypto/tls"
 	"fmt"
 	"io"
@@ -59,6 +60,8 @@ type Client struct {
 
 	// SSH authentication
 	sshSigner cryptossh.Signer
+
+	signingKey *ecdsa.PrivateKey
 }
 
 // Setting to send to server.
@@ -393,6 +396,9 @@ type Options struct {
 	// SSH authentication.
 	SSHSigner cryptossh.Signer
 
+	// SigningKey for signing queries
+	SigningKey *ecdsa.PrivateKey
+
 	meter  metric.Meter
 	tracer trace.Tracer
 }
@@ -555,7 +561,8 @@ func ConnectWithBuffer(ctx context.Context, conn net.Conn, opt Options, buf *pro
 			User:            user,
 			Password:        opt.Password,
 		},
-		sshSigner: opt.SSHSigner,
+		sshSigner:  opt.SSHSigner,
+		signingKey: opt.SigningKey,
 	}
 
 	handshakeCtx, cancel := context.WithTimeout(ctx, opt.HandshakeTimeout)
