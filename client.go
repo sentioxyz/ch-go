@@ -2,6 +2,7 @@ package ch
 
 import (
 	"context"
+	"crypto/ecdsa"
 	"crypto/tls"
 	"fmt"
 	"io"
@@ -11,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/go-faster/errors"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/metric"
@@ -59,6 +61,8 @@ type Client struct {
 
 	// SSH authentication
 	sshSigner cryptossh.Signer
+
+	signingKey *ecdsa.PrivateKey
 }
 
 // Setting to send to server.
@@ -393,6 +397,15 @@ type Options struct {
 	// SSH authentication.
 	SSHSigner cryptossh.Signer
 
+	// SigningKey is the hex-encoded ECDSA secp256k1 private key for signing queries.
+	// When set, the SDK will automatically sign every query with a JWS token
+	// and inject it as the SQL_x_auth_token setting.
+	// The key should be a hex string without the "0x" prefix.
+	SigningKey string
+
+	// signingKeyParsed is the parsed private key, set during setDefaults.
+	signingKeyParsed *ecdsa.PrivateKey
+
 	meter  metric.Meter
 	tracer trace.Tracer
 }
@@ -454,6 +467,15 @@ func (o *Options) setDefaults() {
 	}
 	if o.ReadTimeout == 0 {
 		o.ReadTimeout = DefaultReadTimeout
+	}
+	if o.SigningKey != "" && o.signingKeyParsed == nil {
+		key := strings.TrimPrefix(o.SigningKey, "0x")
+		parsedKey, err := crypto.HexToECDSA(key)
+		if err != nil {
+			o.Logger.Error("Failed to parse signing key", zap.Error(err))
+		} else {
+			o.signingKeyParsed = parsedKey
+		}
 	}
 }
 
@@ -555,7 +577,8 @@ func ConnectWithBuffer(ctx context.Context, conn net.Conn, opt Options, buf *pro
 			User:            user,
 			Password:        opt.Password,
 		},
-		sshSigner: opt.SSHSigner,
+		sshSigner:  opt.SSHSigner,
+		signingKey: opt.signingKeyParsed,
 	}
 
 	handshakeCtx, cancel := context.WithTimeout(ctx, opt.HandshakeTimeout)
