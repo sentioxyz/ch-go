@@ -33,7 +33,7 @@ const (
 )
 
 var (
-	jwsHeaderV1        = jwsHeader{Alg: "ES256K", Typ: "JWS"}
+	jwsHeaderV1        = jwsHeader{Alg: "ES256K", Typ: "JWT"}
 	jwsHeaderBase64URL string
 )
 

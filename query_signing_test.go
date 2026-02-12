@@ -46,7 +46,7 @@ func TestSignQuery_Header(t *testing.T) {
 	var header jwsHeader
 	require.NoError(t, json.Unmarshal(headerBytes, &header))
 	assert.Equal(t, "ES256K", header.Alg)
-	assert.Equal(t, "JWS", header.Typ)
+	assert.Equal(t, "JWT", header.Typ)
 }
 
 func TestSignQuery_Payload(t *testing.T) {
