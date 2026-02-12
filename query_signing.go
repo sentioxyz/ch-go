@@ -12,65 +12,91 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 )
 
-// JWSSignPayload represents the payload to be signed in the JWS token.
-type JWSSignPayload struct {
-	Sub       string `json:"sub"`
-	Qid       string `json:"qid"`
-	BodyHash  string `json:"body_hash"`
-	Timestamp int64  `json:"timestamp"`
+// jwsHeader represents the header of a JWS token.
+type jwsHeader struct {
+	Alg string `json:"alg"`
+	Typ string `json:"typ"`
 }
 
-// SignQuery generates a JWS token for the given query body and query ID,
+// jwsPayload represents the payload of a JWS authentication token.
+// This matches the proxy validator's expected format.
+type jwsPayload struct {
+	// Iat is the issued-at timestamp (Unix seconds).
+	Iat int64 `json:"iat"`
+	// QueryHash is the Keccak256 hash of the SQL query body (hex encoded with 0x prefix).
+	QueryHash string `json:"qhash"`
+}
+
+const (
+	ethereumRecoveryIDOffset = 27
+	ethereumSignatureLength  = 65
+)
+
+var (
+	jwsHeaderV1        = jwsHeader{Alg: "ES256K", Typ: "JWS"}
+	jwsHeaderBase64URL string
+)
+
+func init() {
+	headerBytes, _ := json.Marshal(jwsHeaderV1)
+	jwsHeaderBase64URL = base64.RawURLEncoding.EncodeToString(headerBytes)
+}
+
+// keccak256Hex computes the Keccak256 hash and returns it as a hex string with 0x prefix.
+func keccak256Hex(data []byte) string {
+	return "0x" + hex.EncodeToString(crypto.Keccak256(data))
+}
+
+// SignQuery generates a JWS token for the given query body,
 // signed with the provided private key.
+// The token format is: base64url(header).base64url(payload).base64url(signature)
+// This matches the proxy validator's expected JWS compact serialization format.
 func SignQuery(privateKey *ecdsa.PrivateKey, queryBody, queryID string) (string, error) {
 	if privateKey == nil {
 		return "", fmt.Errorf("private key is nil")
 	}
 
-	// 1. Calculate Keccak256 hash of the query body
-	queryHash := crypto.Keccak256([]byte(queryBody))
-	queryHashHex := hex.EncodeToString(queryHash)
-
-	// 2. Construct JWS Header
-	header := map[string]string{
-		"alg": "ES256K",
-		"typ": "JWT",
-	}
-	headerJSON, err := json.Marshal(header)
-	if err != nil {
-		return "", fmt.Errorf("failed to marshal JWS header: %w", err)
-	}
-	headerEncoded := base64.RawURLEncoding.EncodeToString(headerJSON)
-
-	// 3. Construct JWS Payload
-	// Using "sub" as the address derived from private key
-	address := crypto.PubkeyToAddress(privateKey.PublicKey).Hex()
-	payload := JWSSignPayload{
-		Sub:       address,
-		Qid:       queryID,
-		BodyHash:  queryHashHex,
-		Timestamp: time.Now().UnixMilli(),
-	}
-	payloadJSON, err := json.Marshal(payload)
+	// 1. Construct JWS Payload (matching proxy validator's JWSPayload struct)
+	payloadBytes, err := json.Marshal(jwsPayload{
+		Iat:       time.Now().Unix(),
+		QueryHash: keccak256Hex([]byte(queryBody)),
+	})
 	if err != nil {
 		return "", fmt.Errorf("failed to marshal JWS payload: %w", err)
 	}
-	payloadEncoded := base64.RawURLEncoding.EncodeToString(payloadJSON)
+	payloadB64 := base64.RawURLEncoding.EncodeToString(payloadBytes)
 
-	// 4. Create Signing Input
-	signingInput := fmt.Sprintf("%s.%s", headerEncoded, payloadEncoded)
-	signingInputHash := crypto.Keccak256([]byte(signingInput))
+	// 2. Create Signing Input: header.payload
+	signingInput := jwsHeaderBase64URL + "." + payloadB64
 
-	// 5. Sign
-	signature, err := crypto.Sign(signingInputHash, privateKey)
+	// 3. Keccak256 hash the signing input
+	msgHash := crypto.Keccak256([]byte(signingInput))
+
+	// 4. Sign with secp256k1 private key
+	sig, err := crypto.Sign(msgHash, privateKey)
 	if err != nil {
 		return "", fmt.Errorf("failed to sign query: %w", err)
 	}
-	signatureEncoded := base64.RawURLEncoding.EncodeToString(signature)
 
-	// 6. Concatenate
-	token := fmt.Sprintf("%s.%s", signingInput, signatureEncoded)
-	return token, nil
+	// 5. Validate signature
+	if len(sig) != ethereumSignatureLength {
+		return "", fmt.Errorf("invalid signature length: expected %d, got %d", ethereumSignatureLength, len(sig))
+	}
+
+	recoveryID := sig[64]
+	if recoveryID > 1 {
+		return "", fmt.Errorf("invalid recovery ID: expected 0 or 1, got %d", recoveryID)
+	}
+
+	// 6. Adjust V value for Ethereum standard (V + 27)
+	ethSig := make([]byte, ethereumSignatureLength)
+	copy(ethSig, sig)
+	ethSig[64] = recoveryID + ethereumRecoveryIDOffset
+
+	sigB64 := base64.RawURLEncoding.EncodeToString(ethSig)
+
+	// 7. Concatenate: header.payload.signature
+	return signingInput + "." + sigB64, nil
 }
 
 // GenerateRandomKey helper for tests
