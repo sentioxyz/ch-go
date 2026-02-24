@@ -130,6 +130,11 @@ func (q *Query) DecodeAware(r *Reader, version int) error {
 		}
 		q.Settings = append(q.Settings, s)
 	}
+	if FeatureInterserverExternallyGrantedRoles.In(version) {
+		if _, err := r.Str(); err != nil {
+			return errors.Wrap(err, "external roles")
+		}
+	}
 	if FeatureInterServerSecret.In(version) {
 		v, err := r.Str()
 		if err != nil {
