@@ -2,7 +2,9 @@ package proto
 
 import (
 	"bytes"
+	"fmt"
 	"io"
+	"math"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -294,4 +296,42 @@ func TestColLowCardinality_DecodeColumn(t *testing.T) {
 		require.NoError(t, dec.DecodeColumn(buf.Reader(), 0))
 		require.Error(t, dec.DecodeColumn(buf.Reader(), 1))
 	})
+}
+
+// TestColLowCardinality_PrepareKeyBoundary256 tests the uint8/uint16/uint32/uint64 boundary in Prepare.
+// Distinct-value count n yields stored keys [0, n-1], so 256 distinct values still fit in
+// uint8 (max key 255); the 257th forces promotion to uint16 for example.
+func TestColLowCardinality_PrepareKeyBoundary256(t *testing.T) {
+	cases := []struct {
+		name string
+		rows int
+		key  CardinalityKey
+	}{
+		{name: "255", rows: 255, key: KeyUInt8},  // keys 0..254 fit in uint8
+		{name: "256", rows: 256, key: KeyUInt8},  // keys 0..255 fit in uint8 (boundary)
+		{name: "257", rows: 257, key: KeyUInt16}, // key 256 overflows uint8, promote to uint16
+
+		{name: "Int16-Fit", rows: math.MaxUint16 - 1, key: KeyUInt16},
+		{name: "Int16-Fit2", rows: math.MaxUint16 + 1, key: KeyUInt16},     // still total values in uint16 range
+		{name: "Int16-Overflow", rows: math.MaxUint16 + 2, key: KeyUInt32}, // now key overflows uint16 range, promote to uint32
+
+		// skipping KeyUInt32 and KeyUInt64 as that needs more memory allocation
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			col := new(ColStr).LowCardinality()
+			col.AppendArr(makeLCStrings(1, tc.rows))
+			require.NoError(t, col.Prepare())
+			require.Equal(t, tc.key, col.key)
+		})
+	}
+}
+
+func makeLCStrings(start, count int) []string {
+	values := make([]string, 0, count)
+	for i := 0; i < count; i++ {
+		values = append(values, fmt.Sprintf("lg-%06d", start+i))
+	}
+	return values
 }
