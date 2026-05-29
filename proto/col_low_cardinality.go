@@ -344,6 +344,8 @@ func (c *ColLowCardinality[T]) Prepare() error {
 	}
 
 	// Select minimum possible size for key.
+	// n is the `count` of distinct values, not the values itself; stored keys range over [0, n-1].
+	// So n == MaxUint8+1 (256) still fits in uint8 (max key 255), and likewise at the wider boundaries.
 	if n := last; n <= math.MaxUint8+1 {
 		c.key = KeyUInt8
 	} else if n <= math.MaxUint16+1 {
