@@ -11,7 +11,7 @@ jobs:
   run:
     runs-on: ubuntu-latest
     strategy:
-      fail-fast: true
+      fail-fast: false # A fail in one of the test instances shouldn't stop other. Make all the failures visible.
       matrix:
         go:
           - "1.25"
