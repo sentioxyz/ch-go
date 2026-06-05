@@ -7,6 +7,8 @@ import (
 	"io"
 	"math/rand"
 	"net/netip"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -1570,4 +1572,52 @@ func TestClient_querySettings(t *testing.T) {
 		{Key: "custom_query", Value: "q", Custom: true},
 		{Key: "custom_query_important", Value: "qi", Important: true, Custom: true},
 	}, got)
+}
+
+// TestQBitWireParity verifies ch-go's QBit bit-plane transpose is byte-identical
+// to ClickHouse's, including the byte-group reversal within multi-byte planes
+// (dimension > 8).
+func TestQBitWireParity(t *testing.T) {
+	conn := Conn(t)
+
+	// QBit is Beta (default-on) since 26.1; absent before 25.10.
+	if v := conn.ServerInfo(); v.Major < 26 || (v.Major == 26 && v.Minor < 1) {
+		t.Skipf("QBit unsupported on %d.%d", v.Major, v.Minor)
+	}
+
+	// Span single-byte (<=8) and multi-byte planes with various trailing remainders.
+	for _, n := range []int{8, 9, 16, 17, 100, 257} {
+		t.Run(fmt.Sprintf("Float32_dim%d", n), func(t *testing.T) {
+			vec := make([]float32, n)
+			parts := make([]string, len(vec))
+			for i := range vec {
+				vec[i] = float32(i-n/2) + 0.5
+				parts[i] = strconv.FormatFloat(float64(vec[i]), 'g', -1, 32)
+			}
+			floatArrayLiteral := "[" + strings.Join(parts, ",") + "]"
+
+			// ch-go encodes the vector.
+			goCol, err := proto.NewColQBit(proto.ColumnTypeFloat32, n)
+			require.NoError(t, err)
+			require.NoError(t, goCol.Append(vec))
+
+			// ClickHouse encodes the same vector; received as raw planes over native.
+			chCol, err := proto.NewColQBit(proto.ColumnTypeFloat32, n)
+			require.NoError(t, err)
+			require.NoError(t, conn.Do(t.Context(), Query{
+				Body:   fmt.Sprintf("SELECT CAST(%s AS QBit(Float32, %d)) AS v", floatArrayLiteral, n),
+				Result: proto.Results{{Name: "v", Data: chCol}},
+			}))
+			require.Equal(t, 1, chCol.Rows())
+
+			// Bit-planes must be byte-identical on the wire.
+			var goBuf, chBuf proto.Buffer
+			goCol.EncodeColumn(&goBuf)
+			chCol.EncodeColumn(&chBuf)
+			require.Equal(t, chBuf.Buf, goBuf.Buf, "ch-go encoding differs from ClickHouse")
+
+			// ch-go decodes ClickHouse-produced planes back to the original vector.
+			assert.Equal(t, vec, chCol.Row(0))
+		})
+	}
 }
