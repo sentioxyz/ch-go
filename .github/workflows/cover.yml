@@ -13,12 +13,12 @@ jobs:
   run:
     runs-on: ubuntu-latest
     env:
-      CH_VER: v22.7.1.2484-stable
+      CH_VER: v25.8.24.21-lts
     steps:
       - name: Install Go
         uses: actions/setup-go@v6
         with:
-          go-version: oldstable
+          go-version: "1.25"
 
       - name: Get Go environment
         id: go-env
@@ -37,7 +37,7 @@ jobs:
             e2e-${{ runner.os }}-go-
 
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Set up ClickHouse cache
         uses: actions/cache@v5
@@ -64,7 +64,7 @@ jobs:
           CH_E2E: "TRUE"
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: coverage
           path: profile.out
@@ -72,7 +72,7 @@ jobs:
           retention-days: 1
 
       - name: Send coverage
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@v6
         with:
           file: profile.out
 
@@ -82,14 +82,14 @@ jobs:
       - run
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Download artifact
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: coverage
 
       - name: Send coverage
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@v6
         with:
           file: profile.out

@@ -1,0 +1,139 @@
+name: sentio-cut-release
+
+on:
+  workflow_dispatch:
+    inputs:
+      upstream_tag:
+        description: "Official ClickHouse/ch-go tag, for example v0.73.0"
+        required: true
+        type: string
+      release_ref:
+        description: "Sentio branch, tag, or SHA to release"
+        required: true
+        type: string
+      suffix_date:
+        description: "Release date suffix YYYYMMDD; defaults to current UTC date"
+        required: false
+        type: string
+      publish:
+        description: "Create and publish the Sentio tag and GitHub release"
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sentio-cut-release-${{ inputs.upstream_tag }}-${{ inputs.release_ref }}
+  cancel-in-progress: false
+
+jobs:
+  cut:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout release ref
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.release_ref }}
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Install Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: "1.25"
+
+      - name: Resolve release metadata
+        id: meta
+        env:
+          RELEASE_REF: ${{ inputs.release_ref }}
+          SUFFIX_DATE: ${{ inputs.suffix_date }}
+          UPSTREAM_TAG: ${{ inputs.upstream_tag }}
+        run: |
+          set -euo pipefail
+
+          if [[ ! "${UPSTREAM_TAG}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::upstream_tag must be a stable tag like v0.73.0"
+            exit 1
+          fi
+
+          if [[ -n "${SUFFIX_DATE}" && ! "${SUFFIX_DATE}" =~ ^[0-9]{8}$ ]]; then
+            echo "::error::suffix_date must use YYYYMMDD"
+            exit 1
+          fi
+
+          if [[ -z "${SUFFIX_DATE}" ]]; then
+            SUFFIX_DATE="$(date -u +%Y%m%d)"
+          fi
+
+          git remote add official https://github.com/ClickHouse/ch-go.git
+          git fetch --no-tags official "refs/tags/${UPSTREAM_TAG}:refs/tags/${UPSTREAM_TAG}"
+          git fetch --tags origin
+
+          SENTIO_TAG="${UPSTREAM_TAG}-sentioxyz-${SUFFIX_DATE}"
+          RELEASE_SHA="$(git rev-parse HEAD)"
+
+          if git ls-remote --exit-code --tags origin "refs/tags/${SENTIO_TAG}" >/dev/null 2>&1; then
+            echo "::error::tag already exists on origin: ${SENTIO_TAG}"
+            exit 1
+          fi
+
+          if ! git merge-base --is-ancestor "${UPSTREAM_TAG}" "${RELEASE_SHA}"; then
+            echo "::error::release_ref ${RELEASE_REF} does not contain ${UPSTREAM_TAG}"
+            exit 1
+          fi
+
+          {
+            echo "release_ref=${RELEASE_REF}"
+            echo "release_sha=${RELEASE_SHA}"
+            echo "sentio_tag=${SENTIO_TAG}"
+            echo "upstream_tag=${UPSTREAM_TAG}"
+          } >> "${GITHUB_OUTPUT}"
+
+          {
+            echo "### Sentio release"
+            echo ""
+            echo "- upstream tag: ${UPSTREAM_TAG}"
+            echo "- release ref: ${RELEASE_REF}"
+            echo "- release sha: ${RELEASE_SHA}"
+            echo "- sentio tag: ${SENTIO_TAG}"
+            echo "- publish: ${{ inputs.publish }}"
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Test release ref
+        run: go test ./...
+
+      - name: Dry run
+        if: ${{ !inputs.publish }}
+        run: |
+          echo "Validated ${{ steps.meta.outputs.sentio_tag }} at ${{ steps.meta.outputs.release_sha }}."
+          echo "Set publish=true to create the tag and GitHub release."
+
+      - name: Publish Sentio release
+        if: ${{ inputs.publish }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_REF: ${{ steps.meta.outputs.release_ref }}
+          RELEASE_SHA: ${{ steps.meta.outputs.release_sha }}
+          SENTIO_TAG: ${{ steps.meta.outputs.sentio_tag }}
+          UPSTREAM_TAG: ${{ steps.meta.outputs.upstream_tag }}
+        run: |
+          set -euo pipefail
+
+          NOTES_FILE="$(mktemp)"
+          cat > "${NOTES_FILE}" <<EOF
+          Sentio ch-go release based on ClickHouse/ch-go ${UPSTREAM_TAG}.
+
+          Release ref: ${RELEASE_REF}
+          Commit: ${RELEASE_SHA}
+          EOF
+
+          git tag "${SENTIO_TAG}" "${RELEASE_SHA}"
+          git push origin "refs/tags/${SENTIO_TAG}"
+
+          gh release create "${SENTIO_TAG}" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --target "${RELEASE_SHA}" \
+            --title "Sentio ch-go ${SENTIO_TAG}" \
+            --notes-file "${NOTES_FILE}"

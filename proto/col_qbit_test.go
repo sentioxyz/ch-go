@@ -281,6 +281,30 @@ func TestColQBit_EncodeDecodeRoundtrip_BFloat16(t *testing.T) {
 	}
 }
 
+func TestColQBit_CHByteOrder(t *testing.T) {
+	// CH stores element group g in byte bytesPerRow-1-g, so element 0 lands in last
+	// byte and element 8 in the first. Plane 0 is MSB = sign bit for Float32.
+	// Self-consistent Append/Row round-trips can't catch a byte-order regression.
+	col, err := NewColQBit(ColumnTypeFloat32, 9)
+	require.NoError(t, err)
+
+	v := make([]float32, 9)
+	for i := range v {
+		v[i] = 1.0
+	}
+	v[0] = -1.0
+	require.NoError(t, col.Append(v))
+	assert.Equal(t, []byte{0x00, 0x01}, col.bitPlanes[0], "element 0 → last byte")
+
+	col.Reset()
+	for i := range v {
+		v[i] = 1.0
+	}
+	v[8] = -1.0
+	require.NoError(t, col.Append(v))
+	assert.Equal(t, []byte{0x01, 0x00}, col.bitPlanes[0], "element 8 → first byte")
+}
+
 func TestColQBit_Reset(t *testing.T) {
 	col, err := NewColQBit(ColumnTypeFloat32, 4)
 	require.NoError(t, err)
