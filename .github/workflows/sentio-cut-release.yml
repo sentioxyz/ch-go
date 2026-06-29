@@ -73,10 +73,16 @@ jobs:
 
           SENTIO_TAG="${UPSTREAM_TAG}-sentioxyz-${SUFFIX_DATE}"
           RELEASE_SHA="$(git rev-parse HEAD)"
+          TAG_EXISTS="false"
 
-          if git ls-remote --exit-code --tags origin "refs/tags/${SENTIO_TAG}" >/dev/null 2>&1; then
-            echo "::error::tag already exists on origin: ${SENTIO_TAG}"
-            exit 1
+          if git ls-remote --exit-code --refs --tags origin "refs/tags/${SENTIO_TAG}" >/dev/null 2>&1; then
+            git fetch --no-tags origin "refs/tags/${SENTIO_TAG}:refs/tags/${SENTIO_TAG}"
+            EXISTING_TAG_TARGET="$(git rev-list -n 1 "${SENTIO_TAG}")"
+            if [[ "${EXISTING_TAG_TARGET}" != "${RELEASE_SHA}" ]]; then
+              echo "::error::tag ${SENTIO_TAG} already exists but points at ${EXISTING_TAG_TARGET}, not ${RELEASE_SHA}"
+              exit 1
+            fi
+            TAG_EXISTS="true"
           fi
 
           if ! git merge-base --is-ancestor "${UPSTREAM_TAG}" "${RELEASE_SHA}"; then
@@ -88,6 +94,7 @@ jobs:
             echo "release_ref=${RELEASE_REF}"
             echo "release_sha=${RELEASE_SHA}"
             echo "sentio_tag=${SENTIO_TAG}"
+            echo "tag_exists=${TAG_EXISTS}"
             echo "upstream_tag=${UPSTREAM_TAG}"
           } >> "${GITHUB_OUTPUT}"
 
@@ -98,6 +105,7 @@ jobs:
             echo "- release ref: ${RELEASE_REF}"
             echo "- release sha: ${RELEASE_SHA}"
             echo "- sentio tag: ${SENTIO_TAG}"
+            echo "- tag exists: ${TAG_EXISTS}"
             echo "- publish: ${{ inputs.publish }}"
           } >> "${GITHUB_STEP_SUMMARY}"
 
@@ -117,6 +125,7 @@ jobs:
           RELEASE_REF: ${{ steps.meta.outputs.release_ref }}
           RELEASE_SHA: ${{ steps.meta.outputs.release_sha }}
           SENTIO_TAG: ${{ steps.meta.outputs.sentio_tag }}
+          TAG_EXISTS: ${{ steps.meta.outputs.tag_exists }}
           UPSTREAM_TAG: ${{ steps.meta.outputs.upstream_tag }}
         run: |
           set -euo pipefail
@@ -129,8 +138,17 @@ jobs:
           Commit: ${RELEASE_SHA}
           EOF
 
-          git tag "${SENTIO_TAG}" "${RELEASE_SHA}"
-          git push origin "refs/tags/${SENTIO_TAG}"
+          if [[ "${TAG_EXISTS}" != "true" ]]; then
+            git tag "${SENTIO_TAG}" "${RELEASE_SHA}"
+            git push origin "refs/tags/${SENTIO_TAG}"
+          else
+            echo "Tag ${SENTIO_TAG} already exists at ${RELEASE_SHA}."
+          fi
+
+          if gh release view "${SENTIO_TAG}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
+            echo "::error::GitHub release already exists: ${SENTIO_TAG}"
+            exit 1
+          fi
 
           gh release create "${SENTIO_TAG}" \
             --repo "${GITHUB_REPOSITORY}" \
