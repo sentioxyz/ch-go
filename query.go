@@ -57,6 +57,7 @@ func (c *Client) querySettings(q Query) []proto.Setting {
 			Key:       s.Key,
 			Value:     s.Value,
 			Important: s.Important,
+			Custom:    s.Custom,
 		})
 	}
 	for _, s := range q.Settings {
@@ -64,6 +65,7 @@ func (c *Client) querySettings(q Query) []proto.Setting {
 			Key:       s.Key,
 			Value:     s.Value,
 			Important: s.Important,
+			Custom:    s.Custom,
 		})
 	}
 	return result
@@ -118,6 +120,16 @@ func (c *Client) sendQuery(ctx context.Context, q Query) error {
 			return errors.Wrap(err, "external data")
 		}
 	}
+
+	for _, t := range q.ExternalTables {
+		if t.Name == "" {
+			return errors.New("external table needs a name")
+		}
+		if err := c.encodeBlock(ctx, t.Name, t.Data); err != nil {
+			return errors.Wrapf(err, "external table %q", t.Name)
+		}
+	}
+
 	// End of external data.
 	if err := c.encodeBlankBlock(ctx); err != nil {
 		return errors.Wrap(err, "external data end")
@@ -194,8 +206,19 @@ type Query struct {
 	// ExternalTable name. Defaults to _data.
 	ExternalTable string
 
+	// ExternalTables is additional external tables sent to server.
+	// If ExternalData is not empty, it's sent along with this tables.
+	ExternalTables []ExternalTable
+
 	// Logger for query, optional, defaults to client logger with `query_id` field.
 	Logger *zap.Logger
+}
+
+// ExternalTable is additional data that can be sent along with query.
+// External tables can be referred by their name just like any temporary table.
+type ExternalTable struct {
+	Name string
+	Data proto.Input
 }
 
 // CorruptedDataErr means that provided hash mismatch with calculated.
@@ -255,7 +278,7 @@ func (c *Client) decodeBlock(ctx context.Context, opt decodeOptions) error {
 	if block.End() {
 		return nil
 	}
-	c.metricsInc(ctx, queryMetrics{
+	c.metricsInc(ctx, queryMetricsDelta{
 		BlocksReceived:  1,
 		RowsReceived:    block.Rows,
 		ColumnsReceived: block.Columns,
@@ -285,7 +308,7 @@ func (c *Client) encodeBlock(ctx context.Context, tableName string, input []prot
 		Columns: len(input),
 	}
 	if len(input) > 0 {
-		c.metricsInc(ctx, queryMetrics{BlocksSent: 1})
+		c.metricsInc(ctx, queryMetricsDelta{BlocksSent: 1})
 		b.Rows = input[0].Data.Rows()
 		b.Info = proto.BlockInfo{
 			// TODO(ernado): investigate and document
@@ -467,7 +490,7 @@ func (c *Client) handlePacket(ctx context.Context, p proto.ServerCode, q Query) 
 		if err != nil {
 			return errors.Wrap(err, "progress")
 		}
-		c.metricsInc(ctx, queryMetrics{Rows: int(p.Rows), Bytes: int(p.Bytes)})
+		c.metricsInc(ctx, queryMetricsDelta{Rows: int(p.Rows), Bytes: int(p.Bytes)})
 		if ce := c.lg.Check(zap.DebugLevel, "Progress"); ce != nil {
 			ce.Write(
 				zap.Uint64("rows", p.Rows),
